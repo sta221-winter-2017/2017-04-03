@@ -1,0 +1,249 @@
+---
+title: "STA221"
+author: "Neil Montgomery"
+date: "Last edited: `r format(Sys.time(), '%Y-%m-%d %H:%M')`"
+output: 
+  beamer_presentation:
+    keep_tex: TRUE
+    incremental: TRUE
+#    df_print: tibble
+    fig_caption: FALSE
+classoption: aspectratio=169
+header-includes:
+- \newcommand{\ve}{\varepsilon}
+- \newcommand{\dbar}[1]{\overline{\overline{#1}}}
+---
+
+```{r setup, include=FALSE, message=FALSE}
+knitr::opts_chunk$set(echo = FALSE, message=FALSE,
+                      dev='pdf', fig.width=5, fig.asp=0.618, fig.align='center')
+options(tibble.width=70, tibble.print_min=5, show.signif.stars = FALSE)
+library(tidyverse)
+library(readxl)
+library(broom)
+source("multiplot.R")
+```
+
+## model selection preview
+
+Recall the Body Fat \% dataset. 
+
+```{r}
+bodyfat <- read_csv("Body_fat.csv")
+bodyfat
+```
+
+## model selection preview
+
+We had considered these two simple regression models:
+
+```{r}
+wt <- bodyfat %>% lm(`Pct BF` ~ Weight, data=.)
+ht <- bodyfat %>% lm(`Pct BF` ~ Height, data=.)
+short_print_lm(summary(wt), short=TRUE)
+short_print_lm(summary(ht), short=TRUE)
+```
+
+## model selection preview
+
+Model with both. Is this a contradiction?
+
+```{r}
+bodyfat %>% 
+  lm(`Pct BF` ~ Weight + Height, data=.) %>% 
+  summary() %>% 
+  short_print_lm()
+```
+
+# more possibilities - indicators and interactions
+
+## indicator, or "dummy" variables
+
+An input variable in a multiple regression model can be just about anything (with minimal technical requirements).
+
+A special and very useful example is a variable with only two possible values: 0 and 1.
+
+\pause This is called an \textit{indicator}, or \text{dummy} variable. The 0 and 1 values have no numerical meaning. They only divide the dataset into two groups.
+
+```{r}
+pizza <- read_excel("pizza.xls")
+pizza <- pizza %>% 
+  mutate(Type=factor(Type), Cheese=factor(Cheese))
+```
+
+\pause For example, question 28.2 "Pizza" has results from the assessment of $n=`r nrow(pizza)`$ frozen pizza brands.
+
+## pizza
+
+Here's a glance at the data. The last two columns are redundant. 
+
+```{r}
+pizza 
+```
+
+They are there for "software" reasons.
+
+## `Score` versus `Calories` plotted 
+
+```{r}
+pizza %>% 
+  ggplot(aes(y=Score, x=Calories, color=Cheese)) + 
+  geom_point()
+```
+
+## model with a dummy variable
+
+What is the meaning of $\beta_2$:
+
+$$y = \beta_0 + \beta_1 x_1 + \beta_2 x_2 + \ve$$
+
+when $x_2$ is a dummy variable?
+
+\pause It lets you fit parallel lines with different intercepts.
+
+## pizza with Cheese dummy fitted
+
+```{r}
+pizza_fit <- pizza %>% lm(Score ~ Calories + Cheese, data=.)
+short_print_lm(summary(pizza_fit))
+```
+
+`Cheese1` is R-speak for \textit{this line is about the impact of `Cheese` with baseline value `1`.}
+
+## pizza plotted with shifted lines (two intercepts)
+
+```{r}
+
+augment(pizza_fit) %>% 
+  ggplot(aes(x=Calories, y=Score, color=Cheese)) + 
+  geom_point() + 
+  geom_line(aes(y=.fitted))
+```
+
+
+## `Fat` and `Score` by `Cheese` plotted
+
+```{r}
+pizza %>% 
+  ggplot(aes(y=Score, x=Fat, color=Cheese)) + 
+  geom_point()
+```
+
+## interaction with a dummy variable
+
+Another use of dummy variables is to allow for different intercepts \textit{and} slopes.
+
+$$y = \beta_0 + \beta_1 x_1 + \beta_2 x_2 + \beta_{3}x_1x_2+\ve$$
+
+\pause The $x_1x_2$ term is called an \textit{interaction} term, which allows the impact of $x_1$ to change as a function of $x_2$. 
+
+Interaction is not limited to the case of one of them being a dummy variable.
+
+## pizza with interaction
+
+```{r}
+pizza_fit2 <- pizza %>% lm(Score ~ Fat*Cheese, data=.)
+short_print_lm(summary(pizza_fit2))
+```
+
+## pizza with two slopes/intercepts
+
+```{r}
+pizza %>% 
+  ggplot(aes(x=Fat, y=Score, color=Cheese)) + 
+  geom_point() + stat_smooth(method="lm", se=FALSE)
+```
+
+## fun fact: t-test versus regression - I
+
+```{r}
+pizza %>% t.test(Score ~ Cheese, var.equal=TRUE, data=.)
+```
+
+
+## fun fact: t-test versus regression - II
+
+```{r}
+pizza %>% lm(Score ~ Cheese,  data=.) %>% summary %>% short_print_lm()
+```
+
+# relationships among the inputs
+
+## "multicollinearity"
+
+I stated the following fact about the $b_i$ estimates for $\beta_i$:
+$$\frac{b_i - \beta_i}{\sqrt{MSE}\sqrt{c_i}} \sim t_{n-k-1}$$
+
+where $c_i$ is a number that reflects the relationships between $x_i$ and the other inputs (to be revisited).
+
+\pause It turns out that the more accurately $x_i$ can be expressed as a linear combination of the other $x_j$ in the model, the larger $c_i$ gets.
+
+\pause For example, when $x_i$ and some other $x_j$ are highly "correlated", it means they are close to linear functions of one another. 
+
+\pause What happens when $c_i$ is large?
+
+## illustration of the problem - two pairs of inputs
+
+```{r, echo=FALSE, message=FALSE}
+library(dplyr)
+library(ggplot2)
+X_A <- cbind(con=rep(1,16),x1=rep(1:4,each=4),x2=rep(1:4,4))
+X_B <- cbind(con=rep(1,16),x1=rep(1:4,each=4), x2=c(
+                              (1:4-1)/20+1,
+                              (1:4-2)/20+2,
+                              (1:4-3)/20+3,
+                              (1:4-4)/20+4))
+p1 <- data.frame(X_A) %>% 
+  ggplot(aes(x=x1, y=x2)) + geom_point() + ggtitle("Case A")
+
+p2 <- data.frame(X_B) %>% 
+  ggplot(aes(x=x1, y=x2)) + geom_point() + ggtitle("Case B")
+
+multiplot(p1, p2, cols=2)
+```
+
+## illustration of the problem
+
+
+
+I'll generate some data from the same model in each case:
+$$y = 1 + 2x_1 + 3x_2 + \varepsilon, \quad\varepsilon \sim N(0,1)$$
+
+```{r, echo=FALSE}
+set.seed(2)
+error <- rnorm(16, 0, 1)
+Case_A = data.frame(y = X_A %*% c(1,2,3) + error,
+                    x1 = X_A[,2], x2 = X_A[,3])
+Case_B = data.frame(y = X_B %*% c(1,2,3) + error,
+                    x1 = X_B[,2], x2 = X_B[,3])
+
+```
+
+
+Then fit the two datasets to regression models...
+
+## Case A
+
+```{r, echo=FALSE}
+summary(lm(y ~ x1 + x2, data = Case_A)) %>% short_print_lm()
+```
+
+## Case B
+
+```{r, echo=FALSE}
+summary(lm(y ~ x1 + x2, data = Case_B)) %>% short_print_lm()
+```
+
+Note the small p-value for the overall $F$ test.
+
+## Note that multicollinearity is merely a *possible* problem
+
+Case C: same model fit to the Case B situation but with $n=288$
+
+```{r, echo=FALSE}
+set.seed(11)
+X_C <- X_B[rep(1:16, 18),]
+Case_C = data.frame(y = X_C %*% c(1,2,3) + rnorm(288, 0, 1),
+                    x1 = X_C[,2], x2 = X_C[,3])
+summary(lm(y ~ x1 + x2, data = Case_C)) %>% short_print_lm()
+```
